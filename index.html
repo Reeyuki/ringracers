@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ring Racers</title>
+<style>
+  body {
+    margin:0; background:#000; color:#fff; font-family:sans-serif;
+    display:flex; align-items:center; justify-content:center; min-height:100vh;
+  }
+  canvas { image-rendering:pixelated; }
+  #ui {
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    display:flex; flex-direction:column; align-items:center; gap:10px;
+    text-align:center;
+  }
+  button,label {
+    background:#222; color:#fff; border:1px solid #555; border-radius:6px;
+    padding:8px 12px; cursor:pointer;
+  }
+  button:hover,label:hover { background:#444; }
+  progress { width:100%; height:8px; accent-color:#0f8; border-radius:4px; }
+</style>
+<script>
+// Split-file reconstruction for jsDelivr 20MB limit
+// All files >20MB were split via: split -b 20M --numeric-suffixes=0 --suffix-length=2 file file.part
+// This handler intercepts fetch() for those files and reconstructs from .part00, .part01, ...
+(function() {
+  const SPLIT_MANIFEST = {
+    "ringracers_ecf8d447c.wasm": 3,
+    "assets/data/altmusic.pk3": 5,
+    "assets/data/chars.pk3": 3,
+    "assets/data/maps.pk3": 3,
+    "assets/data/music.pk3": 15,
+    "assets/data/sounds.pk3": 3,
+    "assets/data/staffghosts.pk3": 3,
+    "assets/data/textures_OriginalZones.pk3": 4,
+    "assets/data/textures_SEGAZones.pk3": 3
+  };
+  const _origFetch = window.fetch;
+  window.fetch = async function(input, init) {
+    let url = typeof input === 'string' ? input : (input instanceof Request ? input.url : String(input));
+    let matched = null;
+    for (const k in SPLIT_MANIFEST) {
+      if (url.endsWith(k)) { matched = k; break; }
+    }
+    if (!matched) return _origFetch.call(this, input, init);
+    const parts = SPLIT_MANIFEST[matched];
+    try {
+      const promises = [];
+      for (let i = 0; i < parts; i++) {
+        const partUrl = url + '.part' + String(i).padStart(2, '0');
+        // use original fetch to avoid recursion (part URLs end with .partXX, not matched key)
+        promises.push(_origFetch(partUrl, init).then(r => {
+          if (!r.ok) throw new Error('failed part ' + i + ' status ' + r.status);
+          return r.arrayBuffer();
+        }));
+      }
+      const buffers = await Promise.all(promises);
+      const total = buffers.reduce((s, b) => s + b.byteLength, 0);
+      const out = new Uint8Array(total);
+      let off = 0;
+      for (const b of buffers) { out.set(new Uint8Array(b), off); off += b.byteLength; }
+      const ct = matched.endsWith('.wasm') ? 'application/wasm' : 'application/octet-stream';
+      return new Response(out, {
+        status: 200,
+        statusText: 'OK',
+        headers: { 'Content-Type': ct, 'Content-Length': String(total) }
+      });
+    } catch (e) {
+      console.error('[split-fetch] reconstruct failed for', matched, e);
+      return _origFetch.call(this, input, init);
+    }
+  };
+})();
+</script>
+</head>
+
+<div id="credit">
+<p title="cute girl" style="position:fixed;bottom:6px;left:8px;margin:0;font-size:18px;">
+  port by yuriko.shimizu
+</p>
+<a style="position:fixed;top:6px;right:8px;margin:0;font-size:18px;color:white;" href="troubleshooting.html">Troubleshooting</a>
+<p title="cool team" style="position:fixed;bottom:6px;right:8px;margin:0;font-size:18px;">
+  DRRR by Kart Krew Dev
+</p>
+</div>
+
+<body>
+<canvas id="canvas" tabindex="-1"></canvas>
+<div id="ui">
+  <img src="https://cdn.jsdelivr.net/gh/reeyuki/ringracers@main/logo.png" style="image-rendering:pixelated;transform:scale(2.5);margin-bottom:5vw;margin-left:1vw">
+  <button id="start">Start DRRR</button>
+  <button id="uploadBtn">Upload Addons<input type="file" id="upload" multiple hidden></button>
+  <div id="addons" style="width:100%;text-align:left;"></div>
+  <div style="display:flex;gap:10px;">
+    <button id="saveUploadBtn">Save Upload<input type="file" id="saveUpload" multiple hidden></button>
+    <button id="downloadSave">Save Download</button>
+  </div>
+  <div style="display:flex;gap:10px;">
+    <button id="clearAddons">Clear Addons</button>
+    <button id="clearAll">Clear All Data</button>
+  </div>
+</div>
+
+<div id="status" style="position:fixed;top:10px;left:10px;font-size:14px;"></div>
+<progress id="assetProgress" value="0" max="100"
+  style="display:none;position:fixed;top:32px;left:10px;width:200px;height:8px;accent-color:#0f8;border-radius:4px;">
+</progress>
+
+
+<script nonce="MTY5NzgzNTQyNyw0MTE4MTA3MzYy">
+const ui = id => document.getElementById(id);
+const base = "/home/web_user/.ringracers";
+var Module = {
+  noInitialRun: true,
+  locateFile: (path) => "https://cdn.jsdelivr.net/gh/reeyuki/ringracers@main/" + path,
+  get canvas(){return ui("canvas")},
+  setStatus: t => (ui("status").textContent = t),
+  onRuntimeInitialized(){
+    try{FS.mkdirTree(base);}catch{}
+    FS.mount(IDBFS,{},base);
+    FS.syncfs(true,()=>console.log("IDBFS ready"));
+  }
+};
+
+// start button
+ui("start").onclick=()=>{ui("ui").style.display="none";ui("credit").style.display="none";loadAssets();};
+
+// upload addons
+ui("uploadBtn").querySelector("input").onchange = async e => {
+  const list=ui("addons");
+  try{FS.mkdirTree(base+"/addons");}catch{}
+  for(const f of e.target.files){
+    const wrap=document.createElement("div");
+    wrap.textContent=f.name;
+    const bar=document.createElement("progress");
+    bar.max=f.size;wrap.appendChild(bar);list.appendChild(wrap);
+    const reader=f.stream().getReader();let chunks=[],loaded=0;
+    while(true){let {done,value}=await reader.read();if(done)break;
+      chunks.push(value);loaded+=value.length;bar.value=loaded;}
+    FS.writeFile(base+"/addons/"+f.name,new Uint8Array(await new Blob(chunks).arrayBuffer()));
+    bar.value=f.size;setTimeout(()=>bar.remove(),500);
+  }
+  FS.syncfs(false,()=>console.log("addons synced"));
+};
+ui("uploadBtn").onclick = () => ui("uploadBtn").querySelector("input").click();
+
+//discord doesnt let me do confirms
+function confirmClick(btn, action) {
+  if (btn.dataset.confirming) {
+    const old = btn.dataset.oldText;
+    delete btn.dataset.confirming;
+    btn.textContent = old;
+    action();
+  } else {
+    btn.dataset.confirming = 1;
+    btn.dataset.oldText = btn.textContent;
+    btn.textContent = "Are you sure?";
+    setTimeout(() => {
+      if (btn.dataset.confirming) {
+        btn.textContent = btn.dataset.oldText;
+        delete btn.dataset.confirming;
+      }
+    }, 2000);
+  }
+}
+
+
+// save upload (overwrites in /home/web_user/.ringracers)
+ui("saveUploadBtn").onclick = () => ui("saveUploadBtn").querySelector("input").click();
+
+ui("saveUpload").onchange = async e => {
+  const files = e.target.files;
+  if (!files.length) return;
+
+  for (const f of files) {
+    const wrap = document.createElement("div");
+    wrap.textContent = f.name;
+    const bar = document.createElement("progress");
+    bar.max = f.size;
+    wrap.appendChild(bar);
+    ui("addons").appendChild(wrap);
+
+    const reader = f.stream().getReader();
+    let chunks = [], loaded = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      loaded += value.length;
+      bar.value = loaded;
+    }
+    const buffer = await new Blob(chunks).arrayBuffer();
+    const dest = base + "/" + f.name;
+    try { FS.mkdirTree(base); } catch {}
+    FS.writeFile(dest, new Uint8Array(buffer));
+    bar.value = f.size;
+    setTimeout(() => bar.remove(), 500);
+  }
+
+  FS.syncfs(false, () => {
+    ui("status").textContent = "files saved";
+    setTimeout(() => (ui("status").textContent = ""), 1500);
+  });
+};
+
+
+// Function to trigger browser download from FS
+function downloadFile(path, filename) {
+  try {
+    if (!FS.analyzePath(path).exists) {
+      alert("File not found: " + filename);
+      return;
+    }
+    const data = FS.readFile(path);
+    const blob = new Blob([data], { type: "application/octet-stream" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error("Download failed for " + filename, err);
+  }
+}
+
+ui("downloadSave").onclick = () => {
+  // Ensure we have the latest data from IDBFS before downloading
+  FS.syncfs(true, (err) => {
+    if (err) {
+      console.error("Sync failed", err);
+      return;
+    }
+    downloadFile("/home/web_user/.ringracers/ringdata.dat", "ringdata.dat");
+    downloadFile("/home/web_user/.ringracers/ringprofiles.prf", "ringprofiles.prf");
+  });
+};
+
+ui("clearAddons").onclick = e => confirmClick(e.target, () => {
+  try {
+    const path = base + "/addons";
+    if (FS.analyzePath(path).exists)
+      FS.readdir(path).filter(n => ![".",".."].includes(n)).forEach(n => FS.unlink(path+"/"+n));
+    ui("addons").innerHTML = "";
+    FS.syncfs(false, () => console.log("addons cleared"));
+    ui("status").textContent = "addons cleared";
+    setTimeout(() => ui("status").textContent = "", 1500);
+  } catch (err) { console.error(err); }
+});
+
+ui("clearAll").onclick = e => confirmClick(e.target, () => {
+  const root = base;
+  function del(path) {
+    if (!FS.analyzePath(path).exists) return;
+    const stat = FS.stat(path);
+    if (FS.isDir(stat.mode)) {
+      FS.readdir(path)
+        .filter(n => ![".", ".."].includes(n))
+        .forEach(n => del(path + "/" + n));
+      // keep base dir itself
+      if (path !== root) FS.rmdir(path);
+    } else FS.unlink(path);
+  }
+
+  try {
+    del(root);
+    FS.syncfs(false, err => {
+      if (err) console.error("clear all sync failed:", err);
+      else {
+        console.log("all data cleared");
+        ui("addons").innerHTML = "";
+        ui("status").textContent = "all data cleared";
+        setTimeout(() => (ui("status").textContent = ""), 1500);
+      }
+    });
+  } catch (err) {
+    console.error(err);
+  }
+});
+
+
+
+
+
+
+function loadAssets() {
+  const status = ui("status");
+  const bar = ui("assetProgress");
+  status.style.display = bar.style.display = "block";
+
+  const assets = [
+    "bios.pk3","data/altmusic.pk3","data/chars.pk3","data/dummy.txt",
+    "data/followers.pk3","data/gfx.pk3","data/maps.pk3","data/music.pk3",
+    "data/scripts.pk3","data/shaders.pk3","data/sounds.pk3","data/staffghosts.pk3",
+    "data/textures_General.pk3","data/textures_OriginalZones.pk3",
+    "data/textures_SEGAZones.pk3","data/unlocks.pk3","gamecontrollerdb.txt",
+    "LICENSE-3RD-PARTY.txt","LICENSE.txt","models.dat","PASSWORDS.txt"
+  ];
+
+  let done = 0;
+  const total = assets.length;
+  status.textContent = `loading assets (${done}/${total})`;
+
+  async function fetchWithProgress(url, onProgress) {
+    const res = await fetch(url);
+    const len = +res.headers.get("Content-Length") || 0;
+    const reader = res.body.getReader();
+    let received = 0, chunks = [];
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      received += value.length;
+      if (len) onProgress(Math.min((received / len) * 100, 100));
+    }
+    const blob = new Blob(chunks);
+    return new Uint8Array(await blob.arrayBuffer());
+  }
+
+  (async () => {
+    for (const a of assets) {
+      const dest = base + "/" + a;
+      bar.value = 0;
+      if (!FS.analyzePath(dest).exists) {
+        try {
+          const data = await fetchWithProgress("https://cdn.jsdelivr.net/gh/reeyuki/ringracers@main/assets/" + a, p => bar.value = p);
+          FS.mkdirTree(dest.substring(0, dest.lastIndexOf("/")));
+          FS.writeFile(dest, data);
+        } catch (e) {
+          console.warn("failed to load", a, e);
+        }
+      }
+      done++;
+      status.textContent = `loading assets (${done}/${total})`;
+      bar.value = 100;
+      await new Promise(r => setTimeout(r, 100));
+    }
+
+    FS.syncfs(false, () => console.log("assets cached"));
+    status.textContent = "running!";
+    setTimeout(() => { status.style.display = bar.style.display = "none"; }, 800);
+    Module.callMain();
+  })();
+
+
+
+
+
+function check() {
+    done++;
+    status.textContent = `loading assets (${done}/${total})`;
+    if (done >= total) {
+      FS.syncfs(false, () => console.log("assets cached"));
+      status.textContent = "running!";
+      setTimeout(() => status.style.display = "none", 1000);
+      Module.callMain();
+    }
+  }
+}
+
+
+// canvas fit
+addEventListener("resize",()=>ui("canvas").style.width="80vw");
+dispatchEvent(new Event("resize"));
+</script>
+<script async src="https://cdn.jsdelivr.net/gh/reeyuki/ringracers@main/ringracers_ecf8d447c.js" nonce="MTY5NzgzNTQyNyw0MTE4MTA3MzYy"></script>
+</body>
+</html>

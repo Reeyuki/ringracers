@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ring Racers</title>
+<style>
+  body {
+  margin:0; background:#000; color:#fff; font-family:sans-serif;
+  display:flex; flex-direction:column; align-items:left; margin-left: 8vw; justify-content:center; min-height:100vh;
+}
+
+  canvas { image-rendering:pixelated; }
+  #ui {
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    display:flex; flex-direction:column; align-items:center; gap:10px;
+    text-align:center;
+  }
+  button,label {
+    background:#222; color:#fff; border:1px solid #555; border-radius:6px;
+    padding:8px 12px; cursor:pointer;
+  }
+  button:hover,label:hover { background:#444; }
+  progress { width:100%; height:8px; accent-color:#0f8; border-radius:4px; }
+
+  .qa { margin-bottom: 20px; }
+  .qa h3 { margin: 0; }
+  .qa p { margin: 4px 0 0 0; }
+</style>
+</head>
+<body>
+  <h1 style="position:fixed;top:6px;">Troubleshooting</h1>
+  <a style="position:fixed;top:64px;;margin:0;font-size:18px;color:white;" href="index.html">Back</a>
+
+  <div class="qa">
+    <h3>Q: Why is online disabled?</h3>
+    <p>A: The way DRRR does online is fundamentally incompatible with Emscripten. Because of how web apps work (sandboxing), they simply don't allow data to be sent straight to random IPs over UDP.</p>
+  </div>
+
+  <div class="qa">
+    <h3>Q: I'm getting a file not found error when trying to start the game?</h3>
+    <p>A: Hit clear all data, refresh, then hit start. This will erase your saves, but you shouldn't have any if the game won't start.</p>
+  </div>
+
+  <div class="qa">
+    <h3>Q: Can you add Legacy GL support?</h3>
+    <p>A: No.</p>
+  </div>
+
+  <div class="qa">
+    <h3>Q: Why does this run so badly?</h3>
+    <p>A: Mainly browser overhead + a lack of thread usage. Not much I can do here, sorry.</p>
+  </div>
+
+  <div class="qa">
+    <h3>Q: Part of the game is cropped out!</h3>
+    <p>A: That's not a question. Anyway, enable fullscreen in the game options.</p>
+  </div>
+
+  <div class="qa">
+    <h3>Q: What about things that aren't covered here?</h3>
+    <p>A: Feel free to DM me on Discord (yuriko.shimizu) and I'll have a look.</p>
+  </div>
+</body>
+
+</html>
